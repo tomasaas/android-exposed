@@ -3,6 +3,7 @@ package com.example.androidexposed;
 import android.Manifest;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.hardware.Sensor;
 import android.hardware.SensorManager;
@@ -13,6 +14,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.telephony.TelephonyManager;
 import android.text.InputType;
+import android.text.TextUtils;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
@@ -21,6 +23,7 @@ import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 
@@ -40,6 +43,12 @@ public class MainActivity extends AppCompatActivity {
     private static final int PAGE_SENSORS = 0;
     private static final int PAGE_LIVE = 1;
     private static final int PAGE_OUTPUT = 2;
+    private static final int PAGE_CONFIG = 3;
+    public static final String PREFS_NAME = "server_config";
+    public static final String KEY_SERVER_IP = "server_ip";
+    public static final String KEY_SERVER_PORT = "server_port";
+    public static final String DEFAULT_SERVER_IP = "localhost";
+    public static final int DEFAULT_SERVER_PORT = SensorServerService.DEFAULT_PORT;
 
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
     private final LinkedHashMap<String, SourceInfo> sources = new LinkedHashMap<>();
@@ -50,18 +59,24 @@ public class MainActivity extends AppCompatActivity {
 
     private TextView statusText;
     private TextView permissionsText;
+    private TextView endpointText;
     private TextView liveText;
     private TextView outputText;
     private LinearLayout sensorPage;
     private LinearLayout livePage;
     private LinearLayout outputPage;
+    private LinearLayout configPage;
     private LinearLayout sensorRows;
     private CheckBox includeAllCheckBox;
     private Button startStopButton;
     private Button sensorsTabButton;
     private Button liveTabButton;
     private Button outputTabButton;
+    private Button configTabButton;
     private Button allSensorsButton;
+    private EditText serverIpInput;
+    private EditText serverPortInput;
+    private TextView currentConfigText;
 
     private final Runnable uiRefresh = new Runnable() {
         @Override
@@ -164,9 +179,13 @@ public class MainActivity extends AppCompatActivity {
         outputTabButton = new Button(this);
         outputTabButton.setText("Output");
         outputTabButton.setOnClickListener(v -> showPage(PAGE_OUTPUT));
+        configTabButton = new Button(this);
+        configTabButton.setText("Config");
+        configTabButton.setOnClickListener(v -> showPage(PAGE_CONFIG));
         tabs.addView(sensorsTabButton, weightWrap());
         tabs.addView(liveTabButton, weightWrap());
         tabs.addView(outputTabButton, weightWrap());
+        tabs.addView(configTabButton, weightWrap());
         root.addView(tabs, matchWrap());
 
         sensorPage = new LinearLayout(this);
@@ -181,17 +200,21 @@ public class MainActivity extends AppCompatActivity {
         outputPage.setOrientation(LinearLayout.VERTICAL);
         root.addView(outputPage, matchWrap());
 
+        configPage = new LinearLayout(this);
+        configPage.setOrientation(LinearLayout.VERTICAL);
+        root.addView(configPage, matchWrap());
+
         buildSensorPage();
         buildLivePage();
         buildOutputPage();
+        buildConfigPage();
         setContentView(scrollView);
         showPage(PAGE_SENSORS);
     }
 
     private void buildSensorPage() {
-        TextView endpoint = sectionText();
-        endpoint.setText("Endpoint: http://127.0.0.1:" + SensorServerService.PORT + "\nUse: adb forward tcp:8765 tcp:8765");
-        sensorPage.addView(endpoint, matchWrap());
+        endpointText = sectionText();
+        sensorPage.addView(endpointText, matchWrap());
 
         includeAllCheckBox = new CheckBox(this);
         includeAllCheckBox.setText("Stream all available Android sensors");
@@ -226,6 +249,35 @@ public class MainActivity extends AppCompatActivity {
     private void buildLivePage() {
         liveText = sectionText();
         livePage.addView(liveText, matchWrap());
+    }
+
+    private void buildConfigPage() {
+        TextView configTitle = sectionText();
+        configTitle.setText(getString(R.string.config_title));
+        configTitle.setTextSize(18);
+        configPage.addView(configTitle, matchWrap());
+
+        currentConfigText = sectionText();
+        configPage.addView(currentConfigText, matchWrap());
+
+        serverIpInput = new EditText(this);
+        serverIpInput.setSingleLine(true);
+        serverIpInput.setHint(R.string.server_ip);
+        serverIpInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        configPage.addView(serverIpInput, matchWrap());
+
+        serverPortInput = new EditText(this);
+        serverPortInput.setSingleLine(true);
+        serverPortInput.setHint(R.string.server_port);
+        serverPortInput.setInputType(InputType.TYPE_CLASS_NUMBER);
+        configPage.addView(serverPortInput, matchWrap());
+
+        Button saveButton = new Button(this);
+        saveButton.setText(R.string.save_config);
+        saveButton.setOnClickListener(view -> saveConfig());
+        configPage.addView(saveButton, matchWrap());
+
+        loadConfig();
     }
 
     private void buildOutputPage() {
@@ -285,9 +337,11 @@ public class MainActivity extends AppCompatActivity {
         sensorPage.setVisibility(page == PAGE_SENSORS ? View.VISIBLE : View.GONE);
         livePage.setVisibility(page == PAGE_LIVE ? View.VISIBLE : View.GONE);
         outputPage.setVisibility(page == PAGE_OUTPUT ? View.VISIBLE : View.GONE);
+        configPage.setVisibility(page == PAGE_CONFIG ? View.VISIBLE : View.GONE);
         sensorsTabButton.setEnabled(page != PAGE_SENSORS);
         liveTabButton.setEnabled(page != PAGE_LIVE);
         outputTabButton.setEnabled(page != PAGE_OUTPUT);
+        configTabButton.setEnabled(page != PAGE_CONFIG);
         refreshUi();
     }
 
@@ -383,11 +437,12 @@ public class MainActivity extends AppCompatActivity {
 
         statusText.setText(
                 "Exposure: " + (running ? "running" : "stopped") + "\n" +
-                        "Port: " + SensorServerService.PORT + "\n" +
+                        "Port: " + currentServerPort() + "\n" +
                         "Clients: " + (service == null ? 0 : service.getClientCount()) + "\n" +
                         "Wake lock: " + (service != null && service.isWakeLockHeld())
         );
 
+        endpointText.setText(endpointText());
         permissionsText.setText(formatPermissions(readConfigFromControls()));
         if (allSensorsButton != null) {
             allSensorsButton.setText(areAllSensorsSelected() ? "Clear sensor selection" : "Select every sensor");
@@ -447,9 +502,10 @@ public class MainActivity extends AppCompatActivity {
         }
 
         if (service.getClientCount() == 0) {
+            int port = currentServerPort();
             builder.append("No receiving app is connected.\n");
-            builder.append("Run: adb forward tcp:8765 tcp:8765\n");
-            builder.append("Then run: python tools/read_stream.py");
+            builder.append("Run: adb forward tcp:").append(port).append(" tcp:").append(port).append("\n");
+            builder.append("Then run receiver (client) program.");
             return builder.toString();
         }
 
@@ -640,6 +696,76 @@ public class MainActivity extends AppCompatActivity {
 
     private String valueOrNone(String value) {
         return value == null || value.isEmpty() ? "none" : value;
+    }
+
+    private void loadConfig() {
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        String serverIp = prefs.getString(KEY_SERVER_IP, DEFAULT_SERVER_IP);
+        int serverPort = prefs.getInt(KEY_SERVER_PORT, DEFAULT_SERVER_PORT);
+
+        serverIpInput.setText(serverIp);
+        serverPortInput.setText(String.valueOf(serverPort));
+        showCurrentConfig(serverIp, serverPort);
+    }
+
+    private void saveConfig() {
+        String serverIp = serverIpInput.getText().toString().trim();
+        String serverPortText = serverPortInput.getText().toString().trim();
+
+        if (TextUtils.isEmpty(serverIp)) {
+            serverIpInput.setError(getString(R.string.server_ip_required));
+            return;
+        }
+
+        if (TextUtils.isEmpty(serverPortText)) {
+            serverPortInput.setError(getString(R.string.server_port_required));
+            return;
+        }
+
+        int serverPort;
+        try {
+            serverPort = Integer.parseInt(serverPortText);
+        } catch (NumberFormatException e) {
+            serverPortInput.setError(getString(R.string.server_port_invalid));
+            return;
+        }
+
+        if (serverPort < 1 || serverPort > 65535) {
+            serverPortInput.setError(getString(R.string.server_port_invalid));
+            return;
+        }
+
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .edit()
+                .putString(KEY_SERVER_IP, serverIp)
+                .putInt(KEY_SERVER_PORT, serverPort)
+                .apply();
+
+        showCurrentConfig(serverIp, serverPort);
+        SensorServerService service = SensorServerService.getInstance();
+        if (service != null && service.isServerRunning()) {
+            service.reapplyConfig();
+        }
+        refreshUi();
+        Toast.makeText(this, R.string.config_saved, Toast.LENGTH_SHORT).show();
+    }
+
+    private void showCurrentConfig(String serverIp, int serverPort) {
+        currentConfigText.setText(getString(R.string.current_config, serverIp, serverPort));
+    }
+
+    private int currentServerPort() {
+        SensorServerService service = SensorServerService.getInstance();
+        if (service != null && service.isServerRunning()) {
+            return service.getServerPort();
+        }
+        return getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .getInt(KEY_SERVER_PORT, DEFAULT_SERVER_PORT);
+    }
+
+    private String endpointText() {
+        int port = currentServerPort();
+        return "Endpoint: http://127.0.0.1:" + port + "\nUse: adb forward tcp:" + port + " tcp:" + port;
     }
 
     private static class SourceInfo {
