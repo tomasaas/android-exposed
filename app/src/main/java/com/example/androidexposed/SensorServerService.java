@@ -20,7 +20,7 @@ import androidx.annotation.Nullable;
 import java.util.Map;
 
 public class SensorServerService extends Service {
-    static final int PORT = 8765;
+    static final int DEFAULT_PORT = 8765;
     static final String ACTION_START = "com.example.androidexposed.START";
     static final String ACTION_STOP = "com.example.androidexposed.STOP";
     static final String EXTRA_CONFIG_JSON = "config_json";
@@ -37,6 +37,7 @@ public class SensorServerService extends Service {
     private TelephonyStreamer telephonyStreamer;
     private LocalSensorServer server;
     private PowerManager.WakeLock wakeLock;
+    private int serverPort = DEFAULT_PORT;
 
     static SensorServerService getInstance() {
         return instance;
@@ -95,12 +96,23 @@ public class SensorServerService extends Service {
             return;
         }
 
+        int configuredPort = getConfiguredPort();
+        if (configuredPort != serverPort) {
+            stopServer();
+            startServer(config);
+            return;
+        }
+
         updateForegroundTypes();
         server.applyConfig(config);
     }
 
     boolean isServerRunning() {
         return server != null && server.isRunning();
+    }
+
+    int getServerPort() {
+        return serverPort;
     }
 
     int getClientCount() {
@@ -221,9 +233,10 @@ public class SensorServerService extends Service {
         locationStreamer.applyConfig(config);
         telephonyStreamer.applyConfig(config);
 
+        serverPort = getConfiguredPort();
         server = new LocalSensorServer(
                 this,
-                PORT,
+                serverPort,
                 broadcaster,
                 sensorStreamer,
                 locationStreamer,
@@ -231,6 +244,7 @@ public class SensorServerService extends Service {
                 config
         );
         server.start();
+        updateForegroundTypes();
         Log.i(TAG, "Foreground sensor server service started");
     }
 
@@ -253,6 +267,11 @@ public class SensorServerService extends Service {
         locationStreamer = null;
         telephonyStreamer = null;
         Log.i(TAG, "Foreground sensor server service stopped");
+    }
+
+    private int getConfiguredPort() {
+        return getSharedPreferences(MainActivity.PREFS_NAME, MODE_PRIVATE)
+                .getInt(MainActivity.KEY_SERVER_PORT, DEFAULT_PORT);
     }
 
     private void acquireWakeLock() {
@@ -323,7 +342,7 @@ public class SensorServerService extends Service {
 
         return builder
                 .setContentTitle("Android Exposed running")
-                .setContentText("Sensor server listening on port " + PORT)
+                .setContentText("Sensor server listening on port " + serverPort)
                 .setSmallIcon(R.drawable.ic_launcher_foreground)
                 .setContentIntent(pendingIntent)
                 .setOngoing(true)
