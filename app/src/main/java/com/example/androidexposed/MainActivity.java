@@ -3,6 +3,7 @@ package com.example.androidexposed;
 import android.Manifest;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.hardware.Sensor;
 import android.hardware.SensorManager;
@@ -13,6 +14,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.telephony.TelephonyManager;
 import android.text.InputType;
+import android.text.TextUtils;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
@@ -21,6 +23,7 @@ import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 
@@ -40,6 +43,11 @@ public class MainActivity extends AppCompatActivity {
     private static final int PAGE_SENSORS = 0;
     private static final int PAGE_LIVE = 1;
     private static final int PAGE_OUTPUT = 2;
+    public static final String PREFS_NAME = "server_config";
+    public static final String KEY_SERVER_IP = "server_ip";
+    public static final String KEY_SERVER_PORT = "server_port";
+    public static final String DEFAULT_SERVER_IP = "localhost";
+    public static final int DEFAULT_SERVER_PORT = 8080;
 
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
     private final LinkedHashMap<String, SourceInfo> sources = new LinkedHashMap<>();
@@ -62,6 +70,9 @@ public class MainActivity extends AppCompatActivity {
     private Button liveTabButton;
     private Button outputTabButton;
     private Button allSensorsButton;
+    private EditText serverIpInput;
+    private EditText serverPortInput;
+    private TextView currentConfigText;
 
     private final Runnable uiRefresh = new Runnable() {
         @Override
@@ -189,6 +200,8 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void buildSensorPage() {
+        buildServerConfigSection();
+
         TextView endpoint = sectionText();
         endpoint.setText("Endpoint: http://127.0.0.1:" + SensorServerService.PORT + "\nUse: adb forward tcp:8765 tcp:8765");
         sensorPage.addView(endpoint, matchWrap());
@@ -226,6 +239,35 @@ public class MainActivity extends AppCompatActivity {
     private void buildLivePage() {
         liveText = sectionText();
         livePage.addView(liveText, matchWrap());
+    }
+
+    private void buildServerConfigSection() {
+        TextView configTitle = sectionText();
+        configTitle.setText(getString(R.string.config_title));
+        configTitle.setTextSize(18);
+        sensorPage.addView(configTitle, matchWrap());
+
+        currentConfigText = sectionText();
+        sensorPage.addView(currentConfigText, matchWrap());
+
+        serverIpInput = new EditText(this);
+        serverIpInput.setSingleLine(true);
+        serverIpInput.setHint(R.string.server_ip);
+        serverIpInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        sensorPage.addView(serverIpInput, matchWrap());
+
+        serverPortInput = new EditText(this);
+        serverPortInput.setSingleLine(true);
+        serverPortInput.setHint(R.string.server_port);
+        serverPortInput.setInputType(InputType.TYPE_CLASS_NUMBER);
+        sensorPage.addView(serverPortInput, matchWrap());
+
+        Button saveButton = new Button(this);
+        saveButton.setText(R.string.save_config);
+        saveButton.setOnClickListener(view -> saveConfig());
+        sensorPage.addView(saveButton, matchWrap());
+
+        loadConfig();
     }
 
     private void buildOutputPage() {
@@ -640,6 +682,57 @@ public class MainActivity extends AppCompatActivity {
 
     private String valueOrNone(String value) {
         return value == null || value.isEmpty() ? "none" : value;
+    }
+
+    private void loadConfig() {
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        String serverIp = prefs.getString(KEY_SERVER_IP, DEFAULT_SERVER_IP);
+        int serverPort = prefs.getInt(KEY_SERVER_PORT, DEFAULT_SERVER_PORT);
+
+        serverIpInput.setText(serverIp);
+        serverPortInput.setText(String.valueOf(serverPort));
+        showCurrentConfig(serverIp, serverPort);
+    }
+
+    private void saveConfig() {
+        String serverIp = serverIpInput.getText().toString().trim();
+        String serverPortText = serverPortInput.getText().toString().trim();
+
+        if (TextUtils.isEmpty(serverIp)) {
+            serverIpInput.setError(getString(R.string.server_ip_required));
+            return;
+        }
+
+        if (TextUtils.isEmpty(serverPortText)) {
+            serverPortInput.setError(getString(R.string.server_port_required));
+            return;
+        }
+
+        int serverPort;
+        try {
+            serverPort = Integer.parseInt(serverPortText);
+        } catch (NumberFormatException e) {
+            serverPortInput.setError(getString(R.string.server_port_invalid));
+            return;
+        }
+
+        if (serverPort < 1 || serverPort > 65535) {
+            serverPortInput.setError(getString(R.string.server_port_invalid));
+            return;
+        }
+
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .edit()
+                .putString(KEY_SERVER_IP, serverIp)
+                .putInt(KEY_SERVER_PORT, serverPort)
+                .apply();
+
+        showCurrentConfig(serverIp, serverPort);
+        Toast.makeText(this, R.string.config_saved, Toast.LENGTH_SHORT).show();
+    }
+
+    private void showCurrentConfig(String serverIp, int serverPort) {
+        currentConfigText.setText(getString(R.string.current_config, serverIp, serverPort));
     }
 
     private static class SourceInfo {
