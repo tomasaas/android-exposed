@@ -5,6 +5,9 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.hardware.Sensor;
 import android.hardware.SensorManager;
 import android.location.LocationManager;
@@ -126,8 +129,8 @@ public class MainActivity extends AppCompatActivity {
             if (!sources.containsKey(source)) {
                 sources.put(source, new SourceInfo(
                         source,
-                        source,
-                        sensor.getName() + " / " + sensor.getVendor() + " / type " + sensor.getType(),
+                        sensorLabel(sensor, source),
+                        "Source: " + source + " / Vendor: " + sensor.getVendor() + " / Type: " + sensor.getType(),
                         suggestedRate(sensor)
                 ));
             }
@@ -135,12 +138,12 @@ public class MainActivity extends AppCompatActivity {
 
         LocationManager locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
         if (locationManager != null) {
-            sources.put("gps", new SourceInfo("gps", "gps", "Android location providers", 1));
+            sources.put("gps", new SourceInfo("gps", "GPS / Network Location", "Source: gps / Android location providers", 1));
         }
 
         TelephonyManager telephonyManager = (TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE);
         if (telephonyManager != null && getPackageManager().hasSystemFeature(PackageManager.FEATURE_TELEPHONY)) {
-            sources.put("mobile_signal", new SourceInfo("mobile_signal", "mobile_signal", "Telephony signal strength", 1));
+            sources.put("mobile_signal", new SourceInfo("mobile_signal", "Mobile Signal Strength", "Source: mobile_signal / Telephony signal strength", 1));
         }
 
     }
@@ -149,27 +152,23 @@ public class MainActivity extends AppCompatActivity {
         int padding = dp(16);
 
         ScrollView scrollView = new ScrollView(this);
+        scrollView.setBackgroundColor(Color.rgb(246, 247, 249));
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(padding, padding, padding, padding);
         scrollView.addView(root);
 
-        TextView title = new TextView(this);
-        title.setText("Android Exposed");
-        title.setTextSize(22);
-        title.setPadding(0, 0, 0, dp(10));
-        root.addView(title, matchWrap());
-
-        statusText = sectionText();
         permissionsText = sectionText();
-        root.addView(statusText, matchWrap());
 
         startStopButton = new Button(this);
         startStopButton.setOnClickListener(v -> toggleExposure());
+        startStopButton.setTextColor(Color.WHITE);
+        startStopButton.setTextSize(16);
         root.addView(startStopButton, matchWrap());
 
         LinearLayout tabs = new LinearLayout(this);
         tabs.setOrientation(LinearLayout.HORIZONTAL);
+        tabs.setPadding(0, dp(10), 0, dp(12));
         sensorsTabButton = new Button(this);
         sensorsTabButton.setText("Sensors");
         sensorsTabButton.setOnClickListener(v -> showPage(PAGE_SENSORS));
@@ -247,14 +246,23 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void buildLivePage() {
-        liveText = sectionText();
+        liveText = dataText();
         livePage.addView(liveText, matchWrap());
     }
 
     private void buildConfigPage() {
+        statusText = sectionText();
+        statusText.setTextSize(16);
+        statusText.setTypeface(Typeface.DEFAULT_BOLD);
+        statusText.setPadding(dp(12), dp(12), dp(12), dp(12));
+        statusText.setBackground(roundedBox(Color.WHITE, Color.rgb(210, 216, 224)));
+        configPage.addView(statusText, matchWrap());
+
         TextView configTitle = sectionText();
         configTitle.setText(getString(R.string.config_title));
         configTitle.setTextSize(18);
+        configTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        configTitle.setPadding(0, dp(14), 0, dp(8));
         configPage.addView(configTitle, matchWrap());
 
         currentConfigText = sectionText();
@@ -281,17 +289,19 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void buildOutputPage() {
-        outputText = sectionText();
+        outputText = dataText();
         outputPage.addView(outputText, matchWrap());
     }
 
     private void addSourceRow(SourceInfo source) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.VERTICAL);
-        row.setPadding(0, dp(6), 0, dp(6));
+        row.setPadding(dp(10), dp(8), dp(10), dp(8));
+        row.setBackground(roundedBox(Color.WHITE, Color.rgb(218, 223, 230)));
 
         CheckBox checkBox = new CheckBox(this);
         checkBox.setText(source.label);
+        checkBox.setTypeface(Typeface.DEFAULT_BOLD);
         checkBox.setChecked(selectedConfig.rateForKey(source.key) > 0);
         row.addView(checkBox, matchWrap());
 
@@ -307,7 +317,9 @@ public class MainActivity extends AppCompatActivity {
         rateEdit.setText(String.valueOf(rateForUi(source)));
         row.addView(rateEdit, matchWrap());
 
-        sensorRows.addView(row, matchWrap());
+        LinearLayout.LayoutParams params = matchWrap();
+        params.setMargins(0, 0, 0, dp(8));
+        sensorRows.addView(row, params);
         controls.put(source.key, new SourceControl(source, checkBox, rateEdit));
     }
 
@@ -338,10 +350,6 @@ public class MainActivity extends AppCompatActivity {
         livePage.setVisibility(page == PAGE_LIVE ? View.VISIBLE : View.GONE);
         outputPage.setVisibility(page == PAGE_OUTPUT ? View.VISIBLE : View.GONE);
         configPage.setVisibility(page == PAGE_CONFIG ? View.VISIBLE : View.GONE);
-        sensorsTabButton.setEnabled(page != PAGE_SENSORS);
-        liveTabButton.setEnabled(page != PAGE_LIVE);
-        outputTabButton.setEnabled(page != PAGE_OUTPUT);
-        configTabButton.setEnabled(page != PAGE_CONFIG);
         refreshUi();
     }
 
@@ -434,9 +442,11 @@ public class MainActivity extends AppCompatActivity {
         SensorServerService service = SensorServerService.getInstance();
         boolean running = service != null && service.isServerRunning();
         startStopButton.setText(running ? "Stop sensor exposure" : "Start sensor exposure");
+        startStopButton.setBackground(roundedBox(running ? Color.rgb(174, 57, 57) : Color.rgb(35, 111, 82), Color.TRANSPARENT));
 
         statusText.setText(
-                "Exposure: " + (running ? "running" : "stopped") + "\n" +
+                "Android Exposed\n" +
+                        "Exposure: " + (running ? "running" : "stopped") + "\n" +
                         "Port: " + currentServerPort() + "\n" +
                         "Clients: " + (service == null ? 0 : service.getClientCount()) + "\n" +
                         "Wake lock: " + (service != null && service.isWakeLockHeld())
@@ -445,7 +455,7 @@ public class MainActivity extends AppCompatActivity {
         endpointText.setText(endpointText());
         permissionsText.setText(formatPermissions(readConfigFromControls()));
         if (allSensorsButton != null) {
-            allSensorsButton.setText(areAllSensorsSelected() ? "Clear sensor selection" : "Select every sensor");
+            allSensorsButton.setText("Select all / Deselect all");
         }
 
         if (currentPage == PAGE_LIVE) {
@@ -453,13 +463,14 @@ public class MainActivity extends AppCompatActivity {
         } else if (currentPage == PAGE_OUTPUT) {
             outputText.setText(buildOutputText(service));
         }
+        updateTabs(service);
     }
 
     private String buildLiveText(SensorServerService service) {
         StringBuilder builder = new StringBuilder();
-        builder.append("Live sensor data\n");
-        builder.append("This shows the latest sample produced for each source.\n");
-        builder.append("Clients connected: ").append(service == null ? 0 : service.getClientCount()).append("\n\n");
+        builder.append("LIVE SENSOR DATA\n");
+        builder.append("Clients: ").append(service == null ? 0 : service.getClientCount()).append("\n");
+        builder.append("Latest produced sample for each enabled source.\n\n");
 
         if (service == null || !service.isServerRunning()) {
             builder.append("Exposure is stopped. Tap Start sensor exposure.");
@@ -479,11 +490,11 @@ public class MainActivity extends AppCompatActivity {
         }
 
         for (String source : latest.keySet()) {
-            builder.append(source).append('\n');
-            builder.append("rate: ").append(formatHz(rates.containsKey(source) ? rates.get(source) : 0.0));
-            builder.append("  produced: ").append(produced.containsKey(source) ? produced.get(source) : 0);
-            builder.append("  sent: ").append(sent.containsKey(source) ? sent.get(source) : 0);
-            builder.append("  last: ").append(formatTime(lastTimes.get(source))).append('\n');
+            builder.append(displayNameForSource(source)).append('\n');
+            builder.append("  Rate: ").append(formatHz(rates.containsKey(source) ? rates.get(source) : 0.0)).append('\n');
+            builder.append("  Produced: ").append(produced.containsKey(source) ? produced.get(source) : 0);
+            builder.append(" | Sent: ").append(sent.containsKey(source) ? sent.get(source) : 0);
+            builder.append(" | Last: ").append(formatTime(lastTimes.get(source))).append('\n');
             builder.append(formatSample(latest.get(source))).append("\n\n");
         }
 
@@ -492,9 +503,9 @@ public class MainActivity extends AppCompatActivity {
 
     private String buildOutputText(SensorServerService service) {
         StringBuilder builder = new StringBuilder();
-        builder.append("Output data\n");
-        builder.append("This shows the latest samples sent to connected clients.\n");
-        builder.append("Clients connected: ").append(service == null ? 0 : service.getClientCount()).append("\n\n");
+        builder.append("OUTPUT DATA\n");
+        builder.append("Clients: ").append(service == null ? 0 : service.getClientCount()).append("\n");
+        builder.append("Latest samples actually sent to receiving apps.\n\n");
 
         if (service == null || !service.isServerRunning()) {
             builder.append("Exposure is stopped. Tap Start sensor exposure.");
@@ -520,9 +531,9 @@ public class MainActivity extends AppCompatActivity {
         }
 
         for (String source : latest.keySet()) {
-            builder.append(source).append('\n');
-            builder.append("sent: ").append(sent.containsKey(source) ? sent.get(source) : 0);
-            builder.append("  last_sent: ").append(formatTime(lastTimes.get(source))).append('\n');
+            builder.append(displayNameForSource(source)).append('\n');
+            builder.append("  Sent: ").append(sent.containsKey(source) ? sent.get(source) : 0);
+            builder.append(" | Last sent: ").append(formatTime(lastTimes.get(source))).append('\n');
             builder.append(formatSample(latest.get(source))).append("\n\n");
         }
 
@@ -574,6 +585,40 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private String sensorLabel(Sensor sensor, String source) {
+        String name = sensor.getName();
+        if (name == null || name.trim().isEmpty()) {
+            return prettySourceName(source);
+        }
+        return name.trim();
+    }
+
+    private String prettySourceName(String source) {
+        String[] parts = source.split("_");
+        StringBuilder builder = new StringBuilder();
+        for (String part : parts) {
+            if (part.isEmpty()) {
+                continue;
+            }
+            if (builder.length() > 0) {
+                builder.append(' ');
+            }
+            builder.append(part.substring(0, 1).toUpperCase(Locale.US));
+            if (part.length() > 1) {
+                builder.append(part.substring(1));
+            }
+        }
+        return builder.length() == 0 ? source : builder.toString();
+    }
+
+    private String displayNameForSource(String source) {
+        SourceInfo info = sources.get(source);
+        if (info != null) {
+            return info.label;
+        }
+        return prettySourceName(source);
+    }
+
     private int rateForUi(SourceInfo source) {
         int configured = selectedConfig.rateForKey(source.key);
         return configured > 0 ? configured : source.defaultRateHz;
@@ -602,7 +647,7 @@ public class MainActivity extends AppCompatActivity {
             JSONArray values = sample.optJSONArray("values");
             if (values != null) {
                 StringBuilder builder = new StringBuilder();
-                builder.append("values: ");
+                builder.append("  Values: ");
                 for (int i = 0; i < values.length(); i++) {
                     if (i > 0) {
                         builder.append(", ");
@@ -614,8 +659,8 @@ public class MainActivity extends AppCompatActivity {
                     builder.append(' ').append(unit);
                 }
                 builder.append('\n');
-                builder.append("accuracy: ").append(sample.optInt("accuracy", -1));
-                builder.append("  timestamp_ns: ").append(sample.optLong("timestamp_ns", 0));
+                builder.append("  Accuracy: ").append(sample.optInt("accuracy", -1)).append('\n');
+                builder.append("  Timestamp ns: ").append(sample.optLong("timestamp_ns", 0));
                 return builder.toString();
             }
 
@@ -627,29 +672,29 @@ public class MainActivity extends AppCompatActivity {
 
     private String formatGpsSample(JSONObject sample) {
         StringBuilder builder = new StringBuilder();
-        builder.append("lat: ").append(formatNumber(sample.optDouble("lat")));
-        builder.append("  lon: ").append(formatNumber(sample.optDouble("lon")));
+        builder.append("  Lat: ").append(formatNumber(sample.optDouble("lat"))).append('\n');
+        builder.append("  Lon: ").append(formatNumber(sample.optDouble("lon")));
         if (sample.has("altitude_m")) {
-            builder.append("\naltitude: ").append(formatNumber(sample.optDouble("altitude_m"))).append(" m");
+            builder.append("\n  Altitude: ").append(formatNumber(sample.optDouble("altitude_m"))).append(" m");
         }
         if (sample.has("speed_mps")) {
-            builder.append("  speed: ").append(formatNumber(sample.optDouble("speed_mps"))).append(" m/s");
+            builder.append("\n  Speed: ").append(formatNumber(sample.optDouble("speed_mps"))).append(" m/s");
         }
         if (sample.has("bearing_deg")) {
-            builder.append("  bearing: ").append(formatNumber(sample.optDouble("bearing_deg"))).append(" deg");
+            builder.append("\n  Bearing: ").append(formatNumber(sample.optDouble("bearing_deg"))).append(" deg");
         }
         if (sample.has("accuracy_m")) {
-            builder.append("\naccuracy: ").append(formatNumber(sample.optDouble("accuracy_m"))).append(" m");
+            builder.append("\n  Accuracy: ").append(formatNumber(sample.optDouble("accuracy_m"))).append(" m");
         }
-        builder.append("  provider: ").append(sample.optString("provider", "unknown"));
+        builder.append("\n  Provider: ").append(sample.optString("provider", "unknown"));
         return builder.toString();
     }
 
     private String formatMobileSignalSample(JSONObject sample) {
         StringBuilder builder = new StringBuilder();
-        builder.append("network: ").append(sample.optString("network_type", "UNKNOWN"));
-        builder.append("  dbm: ").append(sample.optInt("dbm", 0));
-        builder.append("  level: ").append(sample.optInt("level", 0));
+        builder.append("  Network: ").append(sample.optString("network_type", "UNKNOWN")).append('\n');
+        builder.append("  dBm: ").append(sample.optInt("dbm", 0)).append('\n');
+        builder.append("  Level: ").append(sample.optInt("level", 0));
         return builder.toString();
     }
 
@@ -673,6 +718,47 @@ public class MainActivity extends AppCompatActivity {
         textView.setTextSize(15);
         textView.setPadding(0, 0, 0, dp(12));
         return textView;
+    }
+
+    private TextView dataText() {
+        TextView textView = sectionText();
+        textView.setTypeface(Typeface.MONOSPACE);
+        textView.setTextSize(14);
+        textView.setTextColor(Color.rgb(31, 38, 46));
+        textView.setPadding(dp(12), dp(12), dp(12), dp(12));
+        textView.setBackground(roundedBox(Color.WHITE, Color.rgb(210, 216, 224)));
+        return textView;
+    }
+
+    private void updateTabs(SensorServerService service) {
+        int liveCount = service == null ? 0 : service.getLatestSamplesSnapshot().size();
+        int outputCount = service == null ? 0 : service.getLatestSentSamplesSnapshot().size();
+
+        sensorsTabButton.setText("Sensors");
+        liveTabButton.setText("Live (" + liveCount + ")");
+        outputTabButton.setText("Output (" + outputCount + ")");
+        configTabButton.setText("Config");
+
+        styleTab(sensorsTabButton, currentPage == PAGE_SENSORS);
+        styleTab(liveTabButton, currentPage == PAGE_LIVE);
+        styleTab(outputTabButton, currentPage == PAGE_OUTPUT);
+        styleTab(configTabButton, currentPage == PAGE_CONFIG);
+    }
+
+    private void styleTab(Button button, boolean active) {
+        button.setTextColor(active ? Color.WHITE : Color.rgb(45, 55, 66));
+        button.setTypeface(Typeface.DEFAULT, active ? Typeface.BOLD : Typeface.NORMAL);
+        button.setBackground(roundedBox(active ? Color.rgb(42, 94, 143) : Color.WHITE, Color.rgb(210, 216, 224)));
+    }
+
+    private GradientDrawable roundedBox(int fillColor, int strokeColor) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(fillColor);
+        drawable.setCornerRadius(dp(8));
+        if (strokeColor != Color.TRANSPARENT) {
+            drawable.setStroke(dp(1), strokeColor);
+        }
+        return drawable;
     }
 
     private LinearLayout.LayoutParams matchWrap() {

@@ -827,6 +827,8 @@ class SensorCatalog {
                 return "magnetometer";
             case Sensor.TYPE_MAGNETIC_FIELD_UNCALIBRATED:
                 return "magnetometer_uncalibrated";
+            case Sensor.TYPE_ORIENTATION:
+                return "orientation";
             case Sensor.TYPE_ROTATION_VECTOR:
                 return "rotation_vector";
             case Sensor.TYPE_GAME_ROTATION_VECTOR:
@@ -855,9 +857,32 @@ class SensorCatalog {
                 return "heart_rate";
             case Sensor.TYPE_HEART_BEAT:
                 return "heart_beat";
+            case Sensor.TYPE_SIGNIFICANT_MOTION:
+                return "significant_motion";
+            case Sensor.TYPE_LOW_LATENCY_OFFBODY_DETECT:
+                return "low_latency_offbody_detect";
+            case Sensor.TYPE_STATIONARY_DETECT:
+                return "stationary_detect";
+            case Sensor.TYPE_MOTION_DETECT:
+                return "motion_detect";
             default:
+                String stringType = sourceFromStringType(sensor.getStringType());
+                if (!stringType.isEmpty()) {
+                    return stringType;
+                }
                 return "sensor_type_" + sensor.getType();
         }
+    }
+
+    private static String sourceFromStringType(String stringType) {
+        if (stringType == null || stringType.trim().isEmpty()) {
+            return "";
+        }
+        String source = stringType.trim().toLowerCase(Locale.US);
+        source = source.replace("android.sensor.", "");
+        source = source.replace("com.google.sensor.", "");
+        source = source.replace('.', '_').replace('-', '_').replace(' ', '_');
+        return source;
     }
 
     static String unitFor(Sensor sensor) {
@@ -873,6 +898,8 @@ class SensorCatalog {
             case Sensor.TYPE_MAGNETIC_FIELD:
             case Sensor.TYPE_MAGNETIC_FIELD_UNCALIBRATED:
                 return "uT";
+            case Sensor.TYPE_ORIENTATION:
+                return "deg";
             case Sensor.TYPE_LIGHT:
                 return "lux";
             case Sensor.TYPE_PROXIMITY:
